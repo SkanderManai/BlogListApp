@@ -1,4 +1,4 @@
-const usersRouter = require("express").Router;
+const usersRouter = require("express").Router();
 const bcrypt = require("bcrypt");
 const User = require("../models/User");
 
@@ -23,4 +23,4 @@ usersRouter.post("/", async (req, res) => {
   res.status(201).json(savedUser);
 });
 
-module.exports(usersRouter);
+module.exports = usersRouter;
