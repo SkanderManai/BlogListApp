@@ -1,99 +1,143 @@
 const mongoose = require("mongoose");
 const supertest = require("supertest");
+const bcrypt = require("bcrypt");
 const app = require("../app");
 const testHelper = require("./testHelper");
 const Blog = require("../models/Blog");
+const User = require("../models/User");
 const api = supertest(app);
+
+const password = "admin";
+var token = "";
 
 beforeEach(async () => {
   await Blog.deleteMany({});
+  await User.deleteMany({});
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = new User({ username: "root", passwordHash });
+  await user.save();
+
+  const response = await api
+    .post("/api/login")
+    .send({ username: user.username, password });
+
+  token = response.body.token;
 
   const blogObjects = testHelper.initialBlogs.map((blog) => new Blog(blog));
   const promiseArray = blogObjects.map((blog) => blog.save());
   await Promise.all(promiseArray);
 });
 
-test("blogs are returned as json", async () => {
-  await api
-    .get("/api/blogs")
-    .expect(200)
-    .expect("Content-Type", /application\/json/);
+describe("when retrieving blogs", () => {
+  test("blogs are returned as json", async () => {
+    await api
+      .get("/api/blogs")
+      .expect(200)
+      .expect("Content-Type", /application\/json/);
+  });
+
+  test("all blogs are retrieved", async () => {
+    const response = await api.get("/api/blogs");
+
+    expect(response.body).toHaveLength(testHelper.initialBlogs.length);
+  });
+
+  test("unique identifier is named id", async () => {
+    const response = await api.get("/api/blogs");
+    expect(response.body[0].id).toBeDefined();
+  });
 });
 
-test("all blogs are retrieved", async () => {
-  const response = await api.get("/api/blogs");
+describe("when adding a new blog", () => {
+  test("a valid blog can be added", async () => {
+    const newBlog = {
+      title: "Canonical string reduction",
+      author: "Edsger W. Dijkstra",
+      url: "http://www.cs.utexas.edu/~EWD/transcriptions/EWD08xx/EWD808.html",
+      likes: 12,
+    };
 
-  expect(response.body).toHaveLength(testHelper.initialBlogs.length);
-});
+    await api
+      .post("/api/blogs")
+      .set({ Authorization: `Bearer ${token}` })
+      .send(newBlog)
+      .expect(201)
+      .expect("Content-Type", /application\/json/);
 
-test("unique identifier is named id", async () => {
-  const response = await api.get("/api/blogs");
-  expect(response.body[0].id).toBeDefined();
-});
+    const blogsAtEnd = await testHelper.blogsInDb();
 
-test("a valid blog can be added", async () => {
-  const newBlog = {
-    title: "Canonical string reduction",
-    author: "Edsger W. Dijkstra",
-    url: "http://www.cs.utexas.edu/~EWD/transcriptions/EWD08xx/EWD808.html",
-    likes: 12,
-  };
+    expect(blogsAtEnd).toHaveLength(testHelper.initialBlogs.length + 1);
 
-  await api
-    .post("/api/blogs")
-    .send(newBlog)
-    .expect(201)
-    .expect("Content-Type", /application\/json/);
+    const titles = blogsAtEnd.map((blog) => blog.title);
 
-  const blogsAtEnd = await testHelper.blogsInDb();
-  //  .log(blogsAtEnd);
+    expect(titles).toContain("Canonical string reduction");
+  });
 
-  expect(blogsAtEnd).toHaveLength(testHelper.initialBlogs.length + 1);
+  test("likes default to zero if not specified", async () => {
+    const newBlog = {
+      title: "Canonical string reduction",
+      author: "Edsger W. Dijkstra",
+      url: "http://www.cs.utexas.edu/~EWD/transcriptions/EWD08xx/EWD808.html",
+    };
 
-  const titles = blogsAtEnd.map((blog) => blog.title);
+    await api
+      .post("/api/blogs")
+      .set({ Authorization: `Bearer ${token}` })
+      .send(newBlog)
+      .expect(201);
 
-  expect(titles).toContain("Canonical string reduction");
-});
+    const response = await api.get("/api/blogs");
 
-test("likes default to zero if not specified", async () => {
-  const newBlog = {
-    title: "Canonical string reduction",
-    author: "Edsger W. Dijkstra",
-    url: "http://www.cs.utexas.edu/~EWD/transcriptions/EWD08xx/EWD808.html",
-  };
+    expect(response.body[response.body.length - 1].likes).toBe(0);
+  });
 
-  await api.post("/api/blogs").send(newBlog).expect(201);
+  test("blog without title is not added", async () => {
+    const newBlog = {
+      author: "Edsger W. Dijkstra",
+      url: "http://www.cs.utexas.edu/~EWD/transcriptions/EWD08xx/EWD808.html",
+    };
 
-  const response = await api.get("/api/blogs");
+    await api
+      .post("/api/blogs")
+      .set({ Authorization: `Bearer ${token}` })
+      .send(newBlog)
+      .expect(400);
 
-  expect(response.body[response.body.length - 1].likes).toBe(0);
-});
+    const blogsAtEnd = await testHelper.blogsInDb();
 
-test("blog without title is not added", async () => {
-  const newBlog = {
-    author: "Edsger W. Dijkstra",
-    url: "http://www.cs.utexas.edu/~EWD/transcriptions/EWD08xx/EWD808.html",
-  };
+    expect(blogsAtEnd).toHaveLength(testHelper.initialBlogs.length);
+  });
 
-  await api.post("/api/blogs").send(newBlog).expect(400);
+  test("blog without url is not added", async () => {
+    const newBlog = {
+      title: "Canonical string reduction",
+      author: "Edsger W. Dijkstra",
+      likes: 12,
+    };
 
-  const blogsAtEnd = await testHelper.blogsInDb();
+    await api
+      .post("/api/blogs")
+      .set({ Authorization: `Bearer ${token}` })
+      .send(newBlog)
+      .expect(400);
 
-  expect(blogsAtEnd).toHaveLength(testHelper.initialBlogs.length);
-});
+    const blogsAtEnd = await testHelper.blogsInDb();
 
-test("blog without url is not added", async () => {
-  const newBlog = {
-    title: "Canonical string reduction",
-    author: "Edsger W. Dijkstra",
-    likes: 12,
-  };
+    expect(blogsAtEnd).toHaveLength(testHelper.initialBlogs.length);
+  });
 
-  await api.post("/api/blogs").send(newBlog).expect(400);
+  test("fails with status code 401 if token is not provided", async () => {
+    const newBlog = {
+      author: "Edsger W. Dijkstra",
+      url: "http://www.cs.utexas.edu/~EWD/transcriptions/EWD08xx/EWD808.html",
+    };
 
-  const blogsAtEnd = await testHelper.blogsInDb();
+    await api.post("/api/blogs").send(newBlog).expect(401);
 
-  expect(blogsAtEnd).toHaveLength(testHelper.initialBlogs.length);
+    const blogsAtEnd = await testHelper.blogsInDb();
+    expect(blogsAtEnd).toHaveLength(testHelper.initialBlogs.length);
+  });
 });
 
 afterAll(async () => {

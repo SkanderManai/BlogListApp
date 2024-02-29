@@ -7,15 +7,16 @@ const api = supertest(app);
 
 const User = require("../models/User");
 
+beforeEach(async () => {
+  await User.deleteMany({});
+
+  const passwordHash = await bcrypt.hash("sekret", 10);
+  const user = new User({ username: "root", passwordHash });
+
+  await user.save();
+});
+
 describe("creation of a new user", () => {
-  beforeEach(async () => {
-    await User.deleteMany({});
-
-    const passwordHash = await bcrypt.hash("sekret", 10);
-    const user = new User({ username: "root", passwordHash });
-
-    await user.save();
-  });
   test("succeeds with a fresh username", async () => {
     const usersAtStart = await helper.usersInDb();
 
