@@ -51,7 +51,10 @@ blogRouter.delete("/:id", async (req, res) => {
 
     const decodedToken = jwt.verify(req.token, process.env.SECRET);
 
-    if (!(blogToDelete.user.toString() === decodedToken.id.toString())) {
+    if (
+        blogToDelete.user &&
+        !(blogToDelete.user.toString() === decodedToken.id.toString())
+    ) {
         return res
             .status(401)
             .json({ error: "blog can only be deleted by creator" });
